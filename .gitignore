@@ -1,0 +1,8 @@
+
+/.vscode
+*.cmake
+/day1/CMakeFiles
+/day1/main.dSYM
+day1/CMakeCache.txt
+day1/Makefile
+day1/day1
