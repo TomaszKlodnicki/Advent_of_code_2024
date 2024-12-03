@@ -1,13 +1,9 @@
 
 /.vscode
 *.cmake
-/day1/CMakeFiles
-/day1/main.dSYM
-day1/CMakeCache.txt
-day1/Makefile
-day1/day1
-/day2/CMakeFiles
-/day2/main.dSYM
-day2/CMakeCache.txt
-day2/Makefile
-day2/day2
+/*/CMakeFiles
+/*/main.dSYM
+*/CMakeCache.txt
+*/Makefile
+*/day*
+*/main
