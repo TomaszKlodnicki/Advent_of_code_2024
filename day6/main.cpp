@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <stdio.h>
+#include <unordered_set>
 
 #define EXAMPLE_FILENAME "example.txt"
 #define PUZZLE_FILENAME "puzzle.txt"
@@ -16,15 +17,28 @@
 const int directions[4][2] = {UP, RIGHT, DOWN, LEFT};
 
 struct step{
-    int x, y;
-    int dir;
+    int16_t x, y;
+    uint8_t dir;
+
+    bool operator==(const step& s) const{
+        return x == s.x && y == s.y && dir == s.dir;
+    }
 };
 
 struct data {
     std::vector<std::vector<char>> map;
-    int guardX, guardY;
-    int dir = 0;
-    int width, height;
+    int16_t guardX, guardY;
+    uint8_t dir = 0;
+    int16_t width, height;
+};
+
+template<>
+struct std::hash<step>
+{
+    std::size_t operator()(const step& s) const noexcept
+    {
+        return  s.dir | (s.x << 8) | (s.y << 24);
+    }
 };
 
 data loadMap(const char* filename){
@@ -67,8 +81,8 @@ bool moveGuard(data& dMap){
 
     dMap.map[dMap.guardY][dMap.guardX] = 'X';
 
-    int newX = dMap.guardX + directions[dMap.dir][0];
-    int newY = dMap.guardY + directions[dMap.dir][1];
+    int16_t newX = dMap.guardX + directions[dMap.dir][0];
+    int16_t newY = dMap.guardY + directions[dMap.dir][1];
 
     if(newX < 0 || newX >= dMap.width || newY < 0 || newY >= dMap.height)
         return false;
@@ -86,16 +100,14 @@ bool moveGuard(data& dMap){
 
 bool checkIfGuardEscapes(data& dMap){
 
-    std::vector<step> steps;
-    steps.reserve(dMap.width * dMap.height);
+    std::unordered_set<step> steps;
 
     while(moveGuard(dMap)){
 
-        for(step& s : steps)
-            if(s.x == dMap.guardX && s.y == dMap.guardY && s.dir == dMap.dir)
-                return false;
+        if(steps.find({dMap.guardX, dMap.guardY, dMap.dir}) != steps.end())
+            return false;
 
-        steps.push_back({dMap.guardX, dMap.guardY, dMap.dir});
+        steps.insert({dMap.guardX, dMap.guardY, dMap.dir});
 
     }
 
@@ -109,8 +121,8 @@ int puzzle1(data dMap){
 
     while(moveGuard(dMap));
 
-    for(int i = 0; i < dMap.height; i++){
-        for(int j = 0; j < dMap.width; j++){
+    for(int16_t i = 0; i < dMap.height; i++){
+        for(int16_t j = 0; j < dMap.width; j++){
             if(dMap.map[i][j] == 'X')
                 retValue++;
         }
@@ -126,8 +138,8 @@ int puzzle2(data dMap){
 
     while(moveGuard(firstRun));
 
-    for(int i = 0; i < firstRun.height; i++){
-        for(int j = 0; j < firstRun.width; j++){
+    for(int16_t i = 0; i < firstRun.height; i++){
+        for(int16_t j = 0; j < firstRun.width; j++){
             if(firstRun.map[i][j] == 'X' && !(i == dMap.guardY && j == dMap.guardX)){
                 data checkMap = dMap;
                 checkMap.map[i][j] = '#';
