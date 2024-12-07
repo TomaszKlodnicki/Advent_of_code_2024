@@ -13,12 +13,6 @@ struct equation{
     std::vector<uint64_t> values;
 };
 
-enum class operation{
-    ADD = 0,
-    MUL = 1,
-    CONC = 2
-};
-
 std::vector<equation> loadMap(const char* filename){
     FILE* fp = fopen(filename, "r");
     if (fp == NULL){
@@ -72,25 +66,26 @@ uint64_t calculateEquation(std::vector<uint64_t>& values, uint16_t possibilities
     return result;
 }
 
-uint64_t calculateEquation(std::vector<uint64_t>& values, const std::vector<operation>& operations){
+uint64_t calculateEquationWithConc(std::vector<uint64_t>& values, uint32_t possibilities){
 
     uint64_t result = values[0];
 
     for(int i = 1; i < values.size(); i++){
-        switch (operations[i-1])
+        switch (possibilities % 3)
         {
-            case operation::MUL:
+            case 0:
                 result *= values[i];
                 break;
 
-            case operation::ADD:
+            case 1:
                 result += values[i];
                 break;
             
-            case operation::CONC:
+            case 2:
                 result = concentration(result, values[i]);
                 break;
         }
+        possibilities = (possibilities - (possibilities % 3)) / 3;
     }
 
     return result;
@@ -113,15 +108,7 @@ bool checkEquationWithConc(equation& eq){
     uint32_t possibilities = pow(3, eq.values.size()-1);
 
     for(uint32_t pos = 0; pos < possibilities; pos++){
-        std::vector<operation> operations;
-
-        uint32_t temp = pos;
-        for(int i = 0; i < eq.values.size()-1; i++){
-            operations.push_back((operation)(temp % 3));
-            temp = (temp - temp % 3) / 3;
-        }
-
-        if(calculateEquation(eq.values, operations) == eq.result){
+        if(calculateEquationWithConc(eq.values, pos) == eq.result){
             return true;
         }
     }
