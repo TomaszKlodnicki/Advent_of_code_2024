@@ -155,7 +155,7 @@ int puzzle2(data dMap){
 
 int main(int argc, char* argv[]) {
 
-    printf("Day 5\n");
+    printf("Day 6\n");
 
     data dMap = loadMap(CHOSE_FILENAME);
 
