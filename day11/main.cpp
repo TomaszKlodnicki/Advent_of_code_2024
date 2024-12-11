@@ -11,6 +11,23 @@
 
 #define CHOSE_FILENAME USE_EXAMPLE ? EXAMPLE_FILENAME : PUZZLE_FILENAME
 
+struct RC {
+    uint64_t rock;
+    unsigned int blinkCount;
+
+    bool operator==(const RC& other) const {
+        return rock == other.rock && blinkCount == other.blinkCount;
+    }
+};
+
+template<>
+struct std::hash<RC> {
+    std::size_t operator()(const RC& rc) const noexcept
+    {
+        return std::hash<uint64_t>()(rc.rock) ^ std::hash<unsigned int>()(rc.blinkCount);
+    }
+};
+
 std::list<uint64_t> loadMap(const char* filename){
     FILE* fp = fopen(filename, "r");
     if (fp == NULL){
@@ -68,6 +85,33 @@ int blink(unsigned int blinkCount, std::list<uint64_t>& list){
 
 }
 
+uint64_t computeRock(uint64_t rock, unsigned int blinkCount){
+
+    if(blinkCount == 0){
+        return 1;
+    }
+
+    static std::unordered_map<RC, uint64_t> computedValues;
+    if(computedValues.find({rock, blinkCount}) != computedValues.end()){
+        return computedValues[{rock, blinkCount}];
+    }
+
+    uint64_t retValue = 0;
+    
+    if(rock == 0){
+        retValue = computeRock(1, blinkCount - 1);
+    }else{
+        std::optional<std::pair<uint32_t, uint32_t>> eD = evenDigits(rock);
+        if(eD != std::nullopt){
+            retValue = computeRock(eD.value().first, blinkCount - 1) + computeRock(eD.value().second, blinkCount - 1);
+        } else {
+            retValue = computeRock(rock * 2024, blinkCount - 1);
+        }
+    }
+    computedValues[{rock, blinkCount}] = retValue;
+    return retValue;
+}
+
 int puzzle1(std::list<uint64_t> list){
 
     return blink(25, list);
@@ -77,32 +121,10 @@ uint64_t puzzle2(std::list<uint64_t> list){
 
     uint64_t retValue = 0;
 
-    blink(25, list);
-
-    std::unordered_map<uint64_t, uint64_t> computedValues50;
-    std::unordered_map<uint64_t, uint64_t> computedValues25;
-
-    for(auto itOne = list.begin(); itOne != list.end(); itOne++){
-        if(computedValues50.find(*itOne) != computedValues50.end()){
-            retValue += computedValues50[*itOne];
-            continue;
-        }
-        std::list<uint64_t> newList = {*itOne};
-        blink(25, newList);
-        uint64_t ret50 = 0;
-        for(auto it = newList.begin(); it != newList.end(); it++){
-            if(computedValues25.find(*it) != computedValues25.end()){
-                ret50 += computedValues25[*it];
-                continue;
-            }
-            std::list<uint64_t> newNewList = {*it};
-            uint64_t ret = blink(25, newNewList);
-            computedValues25[*it] = ret;
-            ret50 += ret;
-        }
-        computedValues50[*itOne] = ret50;
-        retValue += ret50;
+    for (auto it = list.begin(); it != list.end(); it++){
+        retValue += computeRock(*it, 75);
     }
+
     return retValue;
 }
 
