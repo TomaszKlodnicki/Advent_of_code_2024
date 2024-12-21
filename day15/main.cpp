@@ -76,6 +76,10 @@ struct Map{
     int16_t width, height;
     Position robot;
     std::vector<Direction> moves;
+
+    char& operator[](Position p){
+        return map[p.y][p.x];
+    }
 };
 
 Map loadMap(const char* filename){
@@ -147,7 +151,7 @@ Map loadMap(const char* filename){
 bool moveBox(Position boxPos, Direction dir, Map& map){
     Position newPos = boxPos + dirPos(dir);
 
-    switch (map.map[newPos.y][newPos.x])
+    switch (map[newPos])
     {
     case '#':
         return false;
@@ -156,12 +160,95 @@ bool moveBox(Position boxPos, Direction dir, Map& map){
             return false;
 
     case '.':
-        map.map[newPos.y][newPos.x] = 'O';
-        map.map[boxPos.y][boxPos.x] = '.';
+        map[newPos] = 'O';
+        map[boxPos] = '.';
         return true;
     }
 
     return false;
+}
+
+bool moveBigBoxLR(Position boxPos, Direction dir, Map& map){
+    Position newPos = boxPos + (dirPos(dir) * 2);
+
+    if(map[newPos] == '#')
+        return false;
+    
+    if(dir == Direction::LEFT){
+        if(map[newPos] == ']')
+            if(!moveBigBoxLR(newPos, dir, map))
+                return false;
+        
+        map[newPos] = '[';
+        map.map[newPos.y][newPos.x + 1] = ']';
+        map[boxPos] = '.';
+        return true;
+    }
+    else{
+        if(map[newPos] == '[')
+            if(!moveBigBoxLR(newPos, dir, map))
+                return false;
+        
+        map[newPos] = ']';
+        map.map[newPos.y][newPos.x - 1] = '[';
+        map[boxPos] = '.';
+        return true;
+    }
+
+    return false;
+}
+
+bool moveBigBoxUD(Position boxPos, Direction dir, Map& map, bool move = true){
+
+    Position boxPos2 = boxPos + (map[boxPos] == ']' ? Position{-1, 0} : Position{1, 0});
+
+    if(map[boxPos2] != ']'){
+        Position temp = boxPos2;
+        boxPos2 = boxPos;
+        boxPos = temp;
+    }
+
+    Position newPos = boxPos + dirPos(dir);
+    Position newPos2 = boxPos2 + dirPos(dir);
+
+    if(map[newPos] == '#' || map[newPos2] == '#')
+        return false;
+    
+    if(map[newPos] == ']' && map[newPos2] == '['){
+        if(!moveBigBoxUD(newPos, dir, map, false) || !moveBigBoxUD(newPos2, dir, map, false))
+            return false;
+
+        moveBigBoxUD(newPos, dir, map, move);
+        moveBigBoxUD(newPos2, dir, map, move);
+    } else if(map[newPos] == '[' || map[newPos] == ']'){
+
+        if(!moveBigBoxUD(newPos, dir, map, move))
+            return false;
+
+    } else if(map[newPos2] == '[' || map[newPos2] == ']'){
+
+        if(!moveBigBoxUD(newPos2, dir, map, move))
+            return false;
+
+    }
+
+    if(move){
+        map[boxPos] = '.';
+        map[boxPos2] = '.';
+        map[newPos] = '[';
+        map[newPos2] = ']';
+    }
+
+    return true;
+}
+
+bool moveBigBox(Position boxPos, Direction dir, Map& map){
+
+    if(dir == Direction::UP || dir == Direction::DOWN)
+        return moveBigBoxUD(boxPos, dir, map);
+    else
+        return moveBigBoxLR(boxPos, dir, map);
+
 }
 
 
@@ -169,7 +256,7 @@ void moveRobot(Map& map, Direction dir){
 
     Position newPos = map.robot + dirPos(dir);
 
-    switch (map.map[newPos.y][newPos.x])
+    switch (map[newPos])
     {
     case '#':
         return;
@@ -182,10 +269,52 @@ void moveRobot(Map& map, Direction dir){
         if(moveBox(newPos, dir, map))
             map.robot = newPos;
         break;
+
+    case ']':
+        if(moveBigBox(newPos, dir, map))
+            map.robot = newPos;
+        break;
+    case '[':
+        if(moveBigBox(newPos, dir, map))
+            map.robot = newPos;
+        break;
     }
 }
 
-int puzzle1(Map& map){
+void resizeMap(Map& map){
+    for(auto& row : map.map){
+        for(unsigned int i = 0; i < row.size(); i+=2){
+            switch(row[i]){
+                case '#':
+                    row.insert(row.begin() + i, '#');
+                    break;
+                case 'O':
+                    row[i] = ']';
+                    row.insert(row.begin() + i, '[');
+                    break;
+                case '.':
+                    row.insert(row.begin() + i, '.');
+                    break;
+            }
+        }
+    }
+    map.width *= 2;
+    map.robot.x *= 2;
+}
+
+void printMap(Map& map){
+    for(int i = 0; i < map.height; i++){
+        for(int j = 0; j < map.width; j++){
+            if(i == map.robot.y && j == map.robot.x)
+                printf("@");
+            else
+                printf("%c", map.map[i][j]);
+        }
+        printf("\n");
+    }
+}
+
+int puzzle1(Map map){
 
     int retValue = 0;
 
@@ -207,6 +336,19 @@ int puzzle1(Map& map){
 int puzzle2(Map& map){
 
     int retValue = 0;
+
+    resizeMap(map);
+
+    for(auto& dir : map.moves)
+        moveRobot(map, dir);
+
+    for(int i = 0; i < map.height; i++){
+        for(int j = 0; j < map.width; j++){
+            if(map.map[i][j] == '['){
+                retValue += 100*i + j;
+            }
+        }
+    }
 
     return retValue;
 }
