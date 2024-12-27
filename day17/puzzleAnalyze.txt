@@ -1,0 +1,18 @@
+Register A: 25986278
+Register B: 0
+Register C: 0
+
+Program: 2,4,1,4,7,5,4,1,1,4,5,5,0,3,3,0
+
+do
+    B = A % 8
+    B = B xor 4
+    C = A >> B
+    B = B xor C
+    B = B xor 4
+    print B % 8
+    A = A >> 3
+while(A != 0)
+
+A = 0b0 B = 0 C = 0
+A = 0 B = 0 C = 0
