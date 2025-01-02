@@ -2,6 +2,8 @@
 #include <vector>
 #include <stdio.h>
 #include <unordered_map>
+#include <unordered_set>
+#include <queue>
 
 #define EXAMPLE_FILENAME "example.txt"
 #define PUZZLE_FILENAME "puzzle.txt"
@@ -49,12 +51,34 @@ struct Position{
     }
 };
 
+template<>
+struct std::hash<Position> {
+    std::size_t operator()(const Position& p) const noexcept
+    {
+        return p.x | (p.y << 16);
+    }
+};
+
+template<>
+struct std::hash<std::pair<Position, Position>> {
+    std::size_t operator()(const std::pair<Position, Position>& p) const noexcept
+    {
+        return p.first.x ^ (p.first.y << 8) ^ (p.second.x << 16) ^ (p.second.y << 4);
+    }
+};
+
+bool operator==(const std::pair<Position, Position>& p1, const std::pair<Position, Position>& p2){
+    return p1.first.x == p2.first.x && p1.first.y == p2.first.y && p1.second.x == p2.second.x && p1.second.y == p2.second.y;
+}
+
 enum class Direction : int {
     UP = 0,
     RIGHT = 1,
     DOWN = 2,
     LEFT = 3
 };
+
+const Direction directions[] = {Direction::UP, Direction::RIGHT, Direction::DOWN, Direction::LEFT};
 
 Direction operator+(const Direction& d, int i){
     Direction dir = static_cast<Direction>((static_cast<int>(d) + (i % 4) + 4) % 4);
@@ -84,7 +108,7 @@ struct Map{
     int16_t width, height;
     Position start, end;
 
-    char& operator[](Position p){
+    const char& operator[](Position p) const{
         return map[p.y][p.x];
     }
 };
@@ -131,23 +155,22 @@ Map loadMap(const char* filename){
     fclose(fp);
 
     data.values = std::vector<std::vector<uint32_t>>(data.height, std::vector<uint32_t>(data.width, UINT32_MAX));
-    data.values[data.start.y][data.start.x] = 0;
 
     return data;
 }
 
-bool inBorder(const Map& map, Position p){
-    return p.x >= 0 && p.y >= 0 && p.x < map.width && p.y < map.height;
+bool inBorder(int16_t width, int16_t height, Position p){
+    return p.x >= 0 && p.y >= 0 && p.x < width && p.y < height;
 }
 
-void move(Map& map, Position pos){
+void move(const Map& map, std::vector<std::vector<uint32_t>>& values, Position pos, const std::unordered_set<Position>& allowed){
 
-    uint32_t value = map.values[pos.y][pos.x] + 1;
-    for(Direction dir : {Direction::UP, Direction::RIGHT, Direction::DOWN, Direction::LEFT}){
+    uint32_t value = values[pos.y][pos.x] + 1;
+    for(Direction dir : directions){
         Position newPos = pos + dirPos(dir);
-        if(inBorder(map, newPos) && map[newPos] != '#' && map.values[newPos.y][newPos.x] > value){
-            map.values[newPos.y][newPos.x] = value;
-            move(map, newPos);
+        if(inBorder(map.width, map.height, newPos) && (map[newPos] != '#' || allowed.find(newPos) != allowed.end()) && values[newPos.y][newPos.x] > value){
+            values[newPos.y][newPos.x] = value;
+            move(map, values, newPos, allowed);
         }
     }
 }
@@ -157,7 +180,7 @@ uint32_t puzzle1(Map map){
     uint32_t retValue = 0;
 
     map.values[map.start.y][map.start.x] = 0;
-    move(map, map.start);
+    move(map, map.values, map.start, {});
 
     uint32_t normalEndTime = map.values[map.end.y][map.end.x];
 
@@ -167,38 +190,103 @@ uint32_t puzzle1(Map map){
         for(int y = 1; y < map.height -1; y++){
             if(map.map[y][x] != '#')
                 continue;
-            Map newMap = map;
-            newMap.map[y][x] = '.';
-            newMap.values = std::vector<std::vector<uint32_t>>(map.height, std::vector<uint32_t>(map.width, UINT32_MAX));
-            newMap.values[map.start.y][map.start.x] = 0;
-            move(newMap, map.start);
-            if(newMap.values[map.end.y][map.end.x] < normalEndTime)
-                speeded[normalEndTime - newMap.values[map.end.y][map.end.x]]++;
+            
+            Position wallPosition = (Position){x, y};
+            Position startPosition = wallPosition;
+
+            for(Direction dir : directions){
+                Position newPos = (Position){x, y} + dirPos(dir);
+                if(inBorder(map.width, map.height, newPos) && map.values[newPos.y][newPos.x] < map.values[startPosition.y][startPosition.x]){
+                    startPosition = newPos;
+                }
+            }
+
+            if(map.values[startPosition.y][startPosition.x] == UINT32_MAX)
+                continue;
+            
+            auto newValues = map.values;
+            move(map, newValues, startPosition, {wallPosition});
+            if(newValues[map.end.y][map.end.x] < normalEndTime)
+                speeded[normalEndTime - newValues[map.end.y][map.end.x]]++;
         }
     }
 
-    for(auto& [key, value] : speeded){
-        // printf("%u -> %u\n", key, value);
+    for(auto& [key, value] : speeded)
         if(key >= 100)
             retValue += value;
-    }
 
     return retValue;
 }
 
+void computeSpeededForPosition(Map& map, const Position& startPos, Position pos, std::unordered_map<uint32_t, uint32_t>& speeded, uint8_t cheatLen = 0){
+
+    static std::unordered_set<std::pair<Position, Position>> visited;
+    static std::queue<std::pair<Position, uint8_t>> toVisit;
+
+    cheatLen++;
+
+    for(Direction dir : directions){
+        Position newPos = pos + dirPos(dir);
+
+        if(visited.find({startPos, newPos}) != visited.end())
+            continue;
+
+        visited.insert({startPos, newPos});
+
+        if(inBorder(map.width, map.height, newPos)){
+            if(map.values[newPos.y][newPos.x] + cheatLen < map.values[startPos.y][startPos.x] && map[newPos] != '#'){
+                uint32_t speededTime = map.values[startPos.y][startPos.x] - (map.values[newPos.y][newPos.x] + cheatLen);
+                speeded[speededTime]++;
+            }
+            if(cheatLen < 20)
+                toVisit.push({newPos, cheatLen});
+        }
+    }
+
+    while(!toVisit.empty()){
+        auto [queuePos, newCheatLen] = toVisit.front();
+        toVisit.pop();
+        computeSpeededForPosition(map, startPos, queuePos, speeded, newCheatLen);
+    }
+
+}
+
 uint32_t puzzle2(Map map){
 
-    return 0;
+    uint32_t retValue = 0;
+
+    map.values[map.end.y][map.end.x] = 0;
+    move(map, map.values, map.end, {});
+
+    std::unordered_map<uint32_t, uint32_t> speeded;
+
+    for(int16_t h = 0; h < map.height; h++){
+        for(int16_t w = 0; w < map.width; w++){
+            if(map.map[h][w] == '#')
+                continue;
+
+            Position startPos = (Position){w, h};
+            
+            computeSpeededForPosition(map, startPos, startPos, speeded);
+        }
+    }
+
+
+    for(auto& [key, value] : speeded)
+        if(key >= 100)
+            retValue += value;
+
+    return retValue;
 }
 
 int main(int argc, char* argv[]) {
 
-    printf("Day 18\n");
+    printf("Day 20\n");
 
     Map map = loadMap(CHOSE_FILENAME);
 
     printf("Puzzle 1: %u\n", puzzle1(map));
-    printf("Puzzle 1: %u\n", puzzle2(map));
+    printf("Puzzle 2: %u\n", puzzle2(map));
 
     return 0;
 }
