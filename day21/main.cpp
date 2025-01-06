@@ -2,8 +2,7 @@
 #include <vector>
 #include <stdio.h>
 #include <unordered_map>
-#include <unordered_set>
-#include <queue>
+#include <set>
 
 #define EXAMPLE_FILENAME "example.txt"
 #define PUZZLE_FILENAME "puzzle.txt"
@@ -21,13 +20,6 @@ struct Position{
         return newPos;
     }
 
-    Position operator+(int32_t p) const{
-        Position newPos;
-        newPos.x = x + p;
-        newPos.y = y + p;
-        return newPos;
-    }
-
     Position operator-(const Position& p) const{
         Position newPos;
         newPos.x = x - p.x;
@@ -35,41 +27,10 @@ struct Position{
         return newPos;
     }
 
-    Position operator*(int32_t i) const{
-        Position newPos;
-        newPos.x = x * i;
-        newPos.y = y * i;
-        return newPos;
-    }
-
     bool operator==(const Position& p) const{
         return x == p.x && y == p.y;
     }
-
-    bool operator!=(const Position& p) const{
-        return x != p.x || y != p.y;
-    }
 };
-
-template<>
-struct std::hash<Position> {
-    std::size_t operator()(const Position& p) const noexcept
-    {
-        return p.x | (p.y << 16);
-    }
-};
-
-template<>
-struct std::hash<std::pair<Position, Position>> {
-    std::size_t operator()(const std::pair<Position, Position>& p) const noexcept
-    {
-        return p.first.x ^ (p.first.y << 8) ^ (p.second.x << 16) ^ (p.second.y << 4);
-    }
-};
-
-bool operator==(const std::pair<Position, Position>& p1, const std::pair<Position, Position>& p2){
-    return p1.first.x == p2.first.x && p1.first.y == p2.first.y && p1.second.x == p2.second.x && p1.second.y == p2.second.y;
-}
 
 enum class Move : char {
     UP = '^',
@@ -78,6 +39,14 @@ enum class Move : char {
     LEFT = '<',
     PRESS = 'A',
     GAP = ' '
+};
+
+template<>
+struct std::hash<std::pair<Move, Move>> {
+    std::size_t operator()(const std::pair<Move, Move>& p) const noexcept
+    {
+        return static_cast<char>(p.first) | (static_cast<char>(p.second) << 8);
+    }
 };
 
 constexpr Position dirPos(Move dir){
@@ -99,7 +68,7 @@ constexpr Position dirPos(Move dir){
 
 struct NumericKeyPad{
     static const std::unordered_map<char, Position> keypad;
-    Position actualPosition = keypad.at('A');
+    char actualKey = 'A';
 };
 
 const std::unordered_map<char, Position> NumericKeyPad::keypad = {
@@ -120,7 +89,7 @@ const std::unordered_map<char, Position> NumericKeyPad::keypad = {
 struct DirectionalKeyPad{
     static const std::unordered_map<Move, Position> keypad;
 
-    Position actualPosition = keypad.at(Move::PRESS);
+    Move actualMove = Move::PRESS;
 };
 
 const std::unordered_map<Move, Position> DirectionalKeyPad::keypad = {
@@ -169,101 +138,215 @@ Inputs loadMap(const char* filename){
     return data;
 }
 
-std::vector<Move> getMoves(NumericKeyPad& keypad, char button){
-    std::vector<Move> retValue;
+std::set<std::vector<Move>> permute(const std::vector<Move>& vec){
+    std::set<std::vector<Move>> retValue;
 
-    Position hasToMove = NumericKeyPad::keypad.at(button) - keypad.actualPosition;
-
-    if(hasToMove.x < 0 && keypad.actualPosition + (Position){hasToMove.x, 0} != NumericKeyPad::keypad.at(' ')){
-        for(; 0 != hasToMove.x; hasToMove.x++){
-            retValue.push_back(Move::LEFT);
+    if(vec.size() == 1){
+        retValue.insert(vec);
+        return retValue;
+    }
+    
+    for(int i = 0; i < vec.size(); i++){
+        std::vector<Move> newVec = vec;
+        newVec.erase(newVec.begin() + i);
+        auto permuted = permute(newVec);
+        for(auto p : permuted){
+            p.push_back(vec[i]);
+            retValue.insert(p);
         }
     }
+    return retValue;
+}
 
-    if(hasToMove.y > 0 && keypad.actualPosition + (Position){0, hasToMove.y} != NumericKeyPad::keypad.at(' ')){
-        for(; 0 != hasToMove.y; hasToMove.y--){
-            retValue.push_back(Move::DOWN);
+std::set<std::vector<Move>> getMoves(NumericKeyPad& keypad, char button){
+
+    std::set<std::vector<Move>> retSet;
+    std::vector<Move> retVec;
+    Position hasToMove = NumericKeyPad::keypad.at(button) - NumericKeyPad::keypad.at(keypad.actualKey);
+
+    for(; hasToMove.x != 0; (hasToMove.x > 0) ? hasToMove.x-- : hasToMove.x++)
+        retVec.push_back(hasToMove.x > 0 ? Move::RIGHT : Move::LEFT);
+
+    for(; hasToMove.y != 0; (hasToMove.y > 0) ? hasToMove.y-- : hasToMove.y++)
+        retVec.push_back(hasToMove.y > 0 ? Move::DOWN : Move::UP);
+
+    retSet = permute(retVec);
+
+    for(auto it = retSet.begin(); it != retSet.end();){
+        Position pos = NumericKeyPad::keypad.at(keypad.actualKey);
+        bool erase = false;
+        for(auto& m : *it){
+            pos = pos + dirPos(m);
+            if(NumericKeyPad::keypad.at(' ') == pos){
+                it = retSet.erase(it);
+                erase = true;
+                break;
+            }
         }
+        if(!erase)
+            it++;
     }
 
-    if(hasToMove.x > 0){
-        for(int i = 0; i < hasToMove.x; i++)
-            retValue.push_back(Move::RIGHT);
-    }
-    if(hasToMove.y < 0){
-        for(int i = 0; i < -hasToMove.y; i++)
-            retValue.push_back(Move::UP);
-    } else{
-        for(int i = 0; i < hasToMove.y; i++)
-            retValue.push_back(Move::DOWN);
-    }
-    if(hasToMove.x < 0){
-        for(int i = 0; i < -hasToMove.x; i++)
-            retValue.push_back(Move::LEFT);
+    keypad.actualKey = button;
+
+    return retSet;
+}
+
+const std::set<std::vector<Move>>& getMoves(DirectionalKeyPad& keypad, Move button){
+
+    static std::unordered_map<std::pair<Move, Move>, std::set<std::vector<Move>>> saved;
+    auto savedRecord = saved.find((std::pair<Move, Move>){keypad.actualMove, button});
+    if(savedRecord != saved.end()){
+        keypad.actualMove = button;
+        return savedRecord->second;
     }
 
-    keypad.actualPosition = NumericKeyPad::keypad.at(button);
+    std::set<std::vector<Move>> retSet;
+    std::vector<Move> retVec;
+    Position hasToMove = DirectionalKeyPad::keypad.at(button) - DirectionalKeyPad::keypad.at(keypad.actualMove);
+
+    for(; hasToMove.x != 0; (hasToMove.x > 0) ? hasToMove.x-- : hasToMove.x++)
+        retVec.push_back(hasToMove.x > 0 ? Move::RIGHT : Move::LEFT);
+
+    for(; hasToMove.y != 0; (hasToMove.y > 0) ? hasToMove.y-- : hasToMove.y++)
+        retVec.push_back(hasToMove.y > 0 ? Move::DOWN : Move::UP);
+
+    retSet = permute(retVec);
+
+    for(auto it = retSet.begin(); it != retSet.end();){
+        Position pos = DirectionalKeyPad::keypad.at(keypad.actualMove);
+        bool erase = false;
+        for(auto& m : *it){
+            pos = pos + dirPos(m);
+            if(DirectionalKeyPad::keypad.at(Move::GAP) == pos){
+                it = retSet.erase(it);
+                erase = true;
+                break;
+            }
+        }
+        if(!erase)
+            it++;
+    }
+
+    std::pair<Move, Move> record = {keypad.actualMove, button};
+
+    saved.insert({record, retSet});
+    keypad.actualMove = button;
+    return saved[record];
+}
+
+std::set<std::vector<Move>> getMoves(NumericKeyPad& keypad, const std::vector<char>& code){
+    std::vector<std::set<std::vector<Move>>> vectors(code.size());
+    std::set<std::vector<Move>> retSet;
+
+    for(int i = 0; i < code.size(); i++)
+        vectors[i] = getMoves(keypad, code[i]);
+
+    std::function<void(uint8_t, std::vector<Move>)> reqMoves;
+    reqMoves = [&vectors, &retSet, &reqMoves](uint8_t depth, std::vector<Move> vec){
+        if(depth == vectors.size()){
+            retSet.insert(vec);
+            return;
+        }
+
+        for(auto& v : vectors[depth]){
+            std::vector<Move> newVec = vec;
+            newVec.insert(newVec.end(), v.begin(), v.end());
+            newVec.push_back(Move::PRESS);
+            reqMoves(depth + 1, newVec);
+        }
+    };
+
+    reqMoves(0, {});
+    return retSet;
+}
+
+
+struct SaveSize{
+    Move start;
+    Move end;
+    uint8_t depth;
+
+    bool operator==(const SaveSize& s) const{
+        return start == s.start && end == s.end && depth == s.depth;
+    }
+};
+
+template<>
+struct std::hash<SaveSize>{
+    std::size_t operator()(const SaveSize& s) const noexcept
+    {
+        return static_cast<char>(s.start) | (static_cast<char>(s.end) << 8) | (s.depth << 16);
+    }
+};
+
+#define MAX_DEEP 25
+uint64_t getCodeSize(Move input, uint8_t depth = 0){
+    static DirectionalKeyPad robots[MAX_DEEP];
+    static std::unordered_map<SaveSize, uint64_t> saved;
+
+    auto savedRecord = saved.find((SaveSize){robots[depth].actualMove, input, depth});
+    if(savedRecord != saved.end()){
+        robots[depth].actualMove = input;
+        for(int i = MAX_DEEP - 1; i > depth; i--){
+            robots[i].actualMove = Move::PRESS;
+        }
+        return savedRecord->second;
+    }
+
+    SaveSize record = {robots[depth].actualMove, input, depth};
+
+    const std::set<std::vector<Move>>& set = getMoves(robots[depth], input);
+
+    if(depth == MAX_DEEP - 1){
+        saved.insert({record, set.size() != 0 ? set.begin()->size() + 1 : 1});
+        return saved[record];
+    }
+
+    uint64_t retValue = UINT64_MAX;
+    
+    for(const auto& vec : set){
+        uint64_t partialRetValue = 0;
+        for(int i = 0; i < vec.size(); i++){
+            partialRetValue += getCodeSize(vec[i], depth + 1);
+        }
+        partialRetValue += getCodeSize(Move::PRESS, depth + 1);
+        if(partialRetValue < retValue)
+            retValue = partialRetValue;
+    }
+
+    if(set.size() == 0)
+        retValue = getCodeSize(Move::PRESS, depth + 1);
+
+    saved.insert({record, retValue});
 
     return retValue;
 }
 
-std::vector<Move> getMoves(DirectionalKeyPad& keypad, Move button){
-    std::vector<Move> retValue;
+uint64_t computeForIterations(Inputs& input, uint8_t iterations){
 
-    Position hasToMove = DirectionalKeyPad::keypad.at(button) - keypad.actualPosition;
+    uint64_t retValue = 0;
 
-    if(hasToMove.x < 0 && keypad.actualPosition + (Position){hasToMove.x, 0} != NumericKeyPad::keypad.at(' ')){
-        for(; 0 != hasToMove.x; hasToMove.x++){
-            retValue.push_back(Move::LEFT);
+    NumericKeyPad numPad;
+
+    for(int i = 0; i < input.codes.size(); i++){
+        
+        uint64_t codeValue;
+        uint64_t cV = UINT64_MAX;
+        sscanf(input.codes[i].data(), "%lluA", &codeValue);
+
+        auto codes = getMoves(numPad, input.codes[i]);
+
+        for(auto& possibility : codes){
+            uint64_t cVPossibility = 0;
+            for(auto c : possibility){
+                uint64_t codeSize = getCodeSize(c, MAX_DEEP - iterations);
+                cVPossibility += codeSize;
+            }
+            if(cVPossibility < cV)
+                cV = cVPossibility;
         }
-    }
-
-    if(hasToMove.y < 0 && keypad.actualPosition + (Position){0, hasToMove.y} != NumericKeyPad::keypad.at(' ')){
-        for(; 0 != hasToMove.y; hasToMove.y++){
-            retValue.push_back(Move::UP);
-        }
-    }
-
-    if(hasToMove.x > 0){
-        for(int i = 0; i < hasToMove.x; i++)
-            retValue.push_back(Move::RIGHT);
-    }
-    if(hasToMove.y > 0){
-        for(int i = 0; i < hasToMove.y; i++)
-            retValue.push_back(Move::DOWN);
-    } else{
-        for(int i = 0; i < -hasToMove.y; i++)
-            retValue.push_back(Move::UP);
-    }
-    if(hasToMove.x < 0){
-        for(int i = 0; i < -hasToMove.x; i++)
-            retValue.push_back(Move::LEFT);
-    }
-
-    keypad.actualPosition = DirectionalKeyPad::keypad.at(button);
-
-    return retValue;
-}
-
-std::vector<Move> getMoves(NumericKeyPad& keypad, const std::vector<char>& code){
-    std::vector<Move> retValue;
-
-    for(int i = 0; i < code.size(); i++){
-        std::vector<Move> moves = getMoves(keypad, code[i]);
-        retValue.insert(retValue.end(), moves.begin(), moves.end());
-        retValue.push_back(Move::PRESS);
-    }
-
-    return retValue;
-}
-
-std::vector<Move> getMoves(DirectionalKeyPad& keypad, const std::vector<Move>& code){
-    std::vector<Move> retValue;
-
-    for(int i = 0; i < code.size(); i++){
-        std::vector<Move> moves = getMoves(keypad, code[i]);
-        retValue.insert(retValue.end(), moves.begin(), moves.end());
-        retValue.push_back(Move::PRESS);
+        retValue += cV * codeValue;
     }
 
     return retValue;
@@ -271,45 +354,12 @@ std::vector<Move> getMoves(DirectionalKeyPad& keypad, const std::vector<Move>& c
 
 uint32_t puzzle1(Inputs& input){
 
-    uint32_t retValue = 0;
-
-    NumericKeyPad numPad;
-    DirectionalKeyPad firstRobot;
-    DirectionalKeyPad secondRobot;
-
-    for(int i = 0; i < input.codes.size(); i++){
-    
-        std::vector<Move> code = getMoves(numPad, input.codes[i]);
-        // for(auto c : code)
-        //     printf("%c", static_cast<char>(c));
-        // printf("\n");
-        std::vector<Move> code1 = getMoves(firstRobot, code);
-
-        // for(auto c : code1)
-        //     printf("%c", static_cast<char>(c));
-        // printf("\n");
-
-        std::vector<Move> code2 = getMoves(secondRobot, code1);
-
-        // for(auto c : code2)
-        //     printf("%c", static_cast<char>(c));
-        // printf("\n");
-
-        uint32_t codeValue;
-        sscanf(input.codes[i].data(), "%uA", &codeValue);
-        retValue += codeValue * code2.size();
-        printf("Code: %u, %zu\n", codeValue, code2.size());
-
-    }
-
-    return retValue;
+    return computeForIterations(input, 2);
 }
 
-uint32_t puzzle2(Inputs& input){
+uint64_t puzzle2(Inputs& input){
 
-    uint32_t retValue = 0;
-
-    return retValue;
+    return computeForIterations(input, MAX_DEEP);
 }
 
 int main(int argc, char* argv[]) {
@@ -319,7 +369,7 @@ int main(int argc, char* argv[]) {
     Inputs map = loadMap(CHOSE_FILENAME);
 
     printf("Puzzle 1: %u\n", puzzle1(map));
-    printf("Puzzle 2: %u\n", puzzle2(map));
+    printf("Puzzle 2: %llu\n", puzzle2(map));
 
     return 0;
 }
